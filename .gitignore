@@ -1,0 +1,106 @@
+# Build directories
+build/
+build-*/
+out/
+cmake-build-*/
+
+# IDE and editor files
+.vs/
+.vscode/
+*.user
+*.vcxproj.user
+*.suo
+*.sdf
+*.opensdf
+*.db
+*.opendb
+.idea/
+*.swp
+*.swo
+*~
+
+# Compiled binaries
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+*.pdb
+*.ilk
+*.exp
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+*.vcxproj
+*.vcxproj.filters
+*.sln
+compile_commands.json
+
+# Build artifacts
+*.obj
+*.o
+*.lo
+*.la
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Package managers
+vcpkg_installed/
+packages/
+
+# ImGui settings
+imgui.ini
+
+# Runtime files (optional - remove if you want to track these)
+# glew32.dll
+# *.dll
+
+# Documentation build
+docs/_build/
+docs/html/
+docs/latex/
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Test results
+Testing/
+test_results/
+
+# Profiling data
+*.prof
+*.gprof
+
+# Memory debugging
+*.memcheck
+valgrind.out
+
+# Coverage reports
+*.gcov
+*.gcda
+*.gcno
+coverage.info
+coverage/
+
+# Static analysis
+cppcheck-report.xml
+scan-build/
