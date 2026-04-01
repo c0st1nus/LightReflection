@@ -1,12 +1,13 @@
 {
   "name": "opengl-light-simulation",
   "version-string": "1.0.0",
+  "builtin-baseline": "fc3be1ebea7eaeb3071fe716ac65713af1f3a146",
   "dependencies": [
     "glew",
     "glfw3",
     {
       "name": "imgui",
-      "features": [ "glfw-binding", "opengl3-binding" ]
+      "features": ["glfw-binding", "opengl3-binding"]
     }
   ]
 }

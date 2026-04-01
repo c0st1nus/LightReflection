@@ -59,13 +59,17 @@ This application provides three interactive simulation modes to explore differen
 ### Prerequisites
 - **C++17 compatible compiler** (MSVC 2019+, GCC 8+, or Clang 9+)
 - **CMake 3.15+**
-- **Git** (for cloning)
+- **Git** (used by CMake to bootstrap `vcpkg`)
 
-### Dependencies (Included)
-All required libraries are included in the repository:
-- GLFW 3.3+ (Windows binaries for multiple compilers)
-- GLEW 2.1+ (Windows binaries)
-- ImGui (source included)
+### Dependency Management
+The project uses `vcpkg` manifest mode via [`vcpkg.json`](vcpkg.json).
+
+On the first CMake configure, [`CMakeLists.txt`](CMakeLists.txt) will:
+- clone `vcpkg` into `.vcpkg/` if no toolchain was provided manually
+- bootstrap the local `vcpkg` executable
+- install the required dependencies declared in `vcpkg.json`
+
+The dependency baseline is pinned, so fresh checkouts resolve the same package set by default.
 
 ### Build Instructions
 
@@ -73,57 +77,50 @@ All required libraries are included in the repository:
 ```bash
 git clone https://github.com/yourusername/OpenGL-Cmake.git
 cd OpenGL-Cmake
-mkdir build
-cd build
-cmake .. -G "Visual Studio 16 2019" -A x64
-cmake --build . --config Release
+cmake -S . -B build -G "Visual Studio 16 2019" -A x64
+cmake --build build --config Release
 ```
 
 #### Windows (MinGW)
 ```bash
 git clone https://github.com/yourusername/OpenGL-Cmake.git
 cd OpenGL-Cmake
-mkdir build
-cd build
-cmake .. -G "MinGW Makefiles"
-cmake --build .
+cmake -S . -B build -G "MinGW Makefiles"
+cmake --build build
 ```
 
 #### Linux
 ```bash
 git clone https://github.com/yourusername/OpenGL-Cmake.git
 cd OpenGL-Cmake
-mkdir build
-cd build
-
-# Install dependencies
-sudo apt-get install libglew-dev libglfw3-dev libgl1-mesa-dev
-
-cmake ..
-make -j4
+cmake -S . -B build
+cmake --build build -j$(nproc)
 ```
 
 #### macOS
 ```bash
 git clone https://github.com/yourusername/OpenGL-Cmake.git
 cd OpenGL-Cmake
-mkdir build
-cd build
+cmake -S . -B build
+cmake --build build -j$(sysctl -n hw.ncpu)
+```
 
-# Install dependencies with Homebrew
-brew install glew glfw
+#### Optional: Reuse an Existing vcpkg Installation
+If you already have `vcpkg`, you can keep using it instead of the auto-bootstrapped `.vcpkg/` checkout:
 
-cmake ..
-make -j4
+```bash
+cmake -S . -B build \
+  -DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake
+cmake --build build
 ```
 
 ### Running the Application
 ```bash
 # Windows
-.\opengl_simulation.exe
+.\build\Release\opengl_simulation.exe
 
 # Linux/macOS
-./opengl_simulation
+./build/opengl_simulation
 ```
 
 ## Usage Guide

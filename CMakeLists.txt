@@ -3,6 +3,40 @@
 # ============================================================================
 
 cmake_minimum_required(VERSION 3.15)
+
+# Bootstrap a local vcpkg checkout when no toolchain was provided explicitly.
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    set(VCPKG_ROOT "${CMAKE_SOURCE_DIR}/.vcpkg" CACHE PATH "Local vcpkg checkout")
+    set(_vcpkg_toolchain "${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
+
+    if(NOT EXISTS "${_vcpkg_toolchain}")
+        find_package(Git REQUIRED)
+
+        message(STATUS "vcpkg toolchain not provided. Bootstrapping local vcpkg into ${VCPKG_ROOT}")
+
+        execute_process(
+            COMMAND "${GIT_EXECUTABLE}" clone https://github.com/microsoft/vcpkg.git "${VCPKG_ROOT}"
+            COMMAND_ERROR_IS_FATAL ANY
+        )
+
+        if(WIN32)
+            execute_process(
+                COMMAND "${VCPKG_ROOT}/bootstrap-vcpkg.bat" -disableMetrics
+                WORKING_DIRECTORY "${VCPKG_ROOT}"
+                COMMAND_ERROR_IS_FATAL ANY
+            )
+        else()
+            execute_process(
+                COMMAND "${CMAKE_COMMAND}" -E env VCPKG_DISABLE_METRICS=1 sh "${VCPKG_ROOT}/bootstrap-vcpkg.sh" -disableMetrics
+                WORKING_DIRECTORY "${VCPKG_ROOT}"
+                COMMAND_ERROR_IS_FATAL ANY
+            )
+        endif()
+    endif()
+
+    set(CMAKE_TOOLCHAIN_FILE "${_vcpkg_toolchain}" CACHE STRING "vcpkg toolchain file")
+endif()
+
 project(OpenGLSimulation LANGUAGES CXX)
 
 # ============================================================================
@@ -45,7 +79,7 @@ add_executable(opengl_simulation ${APP_SOURCES})
 # Link Libraries (vcpkg packages)
 # ============================================================================
 
-target_link_libraries(opengl_simulation PRIVATE 
+target_link_libraries(opengl_simulation PRIVATE
     GLEW::GLEW              # GLEW OpenGL extension loading
     glfw                    # GLFW window management
     imgui::imgui            # ImGui immediate mode GUI
@@ -54,7 +88,7 @@ target_link_libraries(opengl_simulation PRIVATE
 
 # For Windows, may need additional system libraries
 if(WIN32)
-    target_link_libraries(opengl_simulation PRIVATE 
+    target_link_libraries(opengl_simulation PRIVATE
         gdi32               # Windows Graphics Device Interface
     )
 endif()
