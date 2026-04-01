@@ -61,7 +61,12 @@ find_package(OpenGL REQUIRED)
 
 # Application source files
 set(APP_SOURCES
+    src/geometric_optics.cpp # Thin-lens / mirror image calculations
     src/main.cpp           # Main application and UI
+    src/mirror.cpp         # Mirror geometry and curved mirror support
+    src/mirror_mode.cpp    # Object-based mirror diagram mode
+    src/lens_mode.cpp      # Object-based lens diagram mode
+    src/optics.cpp         # Shared optical geometry and tracing helpers
     src/prism.cpp          # Complex prism light simulation
     src/ray.cpp            # Ray class implementation
     src/reflection.cpp     # Mirror reflection simulation

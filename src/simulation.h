@@ -17,8 +17,12 @@
 #include "imgui.h"  
 #include "imgui_impl_glfw.h"  
 #include "imgui_impl_opengl3.h"  
+#include <algorithm>
 #include <cstdio>  
 #include <iostream>  
+#include <string>
+#include "mirror.h"
+#include "geometric_optics.h"
 
 // ============================================================================
 // Global Variables (definitions in main.cpp)
@@ -29,7 +33,7 @@ extern int screenWidth;
 extern int screenHeight;  
 
 // Simulation modes
-enum SimulationMode { REFLECTION, REFRACTION, PRISM };  
+enum SimulationMode { REFLECTION, REFRACTION, PRISM, MIRROR, LENS };  
 extern SimulationMode currentMode;  
 
 // Physics state variables
@@ -48,6 +52,16 @@ extern float refractiveIndex2_RGB[3];   // RGB-specific refractive indices for d
 extern float rayAColor[3];              // Incident ray color
 extern float rayBColor[3];              // Transmitted/refracted ray color  
 extern float rayCColor[3];              // Reflected ray color  
+
+// Object-mode optical configuration
+extern MirrorType currentMirrorType;
+extern float mirrorCurvatureRadius;
+extern LensType currentLensType;
+extern float lensFocalLength;
+extern float objectDistance;
+extern float objectHeight;
+extern bool objectPointsUp;
+extern bool showConstructionRays;
 
 // ============================================================================
 // Utility Drawing Functions
@@ -115,6 +129,89 @@ inline void draw_dashed_line(float x1, float y1, float x2, float y2, float r, fl
    glDisable(GL_LINE_STIPPLE);  
 }  
 
+inline void draw_filled_triangle(const Vector2& a, const Vector2& b, const Vector2& c, float r, float g, float bColor) {
+   glBegin(GL_TRIANGLES);
+   glColor3f(r, g, bColor);
+   glVertex2f(a.x, a.y);
+   glVertex2f(b.x, b.y);
+   glVertex2f(c.x, c.y);
+   glEnd();
+}
+
+inline float scene_half_width() {
+   float aspect = (screenHeight > 0) ? static_cast<float>(screenWidth) / static_cast<float>(screenHeight) : 1.0f;
+   return (aspect >= 1.0f) ? aspect : 1.0f;
+}
+
+inline float scene_half_height() {
+   float aspect = (screenHeight > 0) ? static_cast<float>(screenWidth) / static_cast<float>(screenHeight) : 1.0f;
+   return (aspect >= 1.0f) ? 1.0f : (1.0f / aspect);
+}
+
+inline Vector2 screen_to_scene(double xpos, double ypos) {
+   float normX = static_cast<float>(xpos) / static_cast<float>(screenWidth) * 2.0f - 1.0f;
+   float normY = 1.0f - static_cast<float>(ypos) / static_cast<float>(screenHeight) * 2.0f;
+   return Vector2(normX * scene_half_width(), normY * scene_half_height());
+}
+
+inline ImVec2 scene_to_screen(const Vector2& point) {
+   float halfWidth = scene_half_width();
+   float halfHeight = scene_half_height();
+   float screenX = ((point.x + halfWidth) / (2.0f * halfWidth)) * static_cast<float>(screenWidth);
+   float screenY = ((halfHeight - point.y) / (2.0f * halfHeight)) * static_cast<float>(screenHeight);
+   return ImVec2(screenX, screenY);
+}
+
+inline float diagram_axis_min_x() {
+   float halfWidth = scene_half_width();
+   return -halfWidth + 0.10f * halfWidth;
+}
+
+inline float diagram_axis_max_x() {
+   float halfWidth = scene_half_width();
+   return halfWidth - 0.10f * halfWidth;
+}
+
+inline float mirror_diagram_x() {
+   float minX = diagram_axis_min_x();
+   float maxX = diagram_axis_max_x();
+   return minX + 0.80f * (maxX - minX);
+}
+
+inline float lens_diagram_x() {
+   return 0.0f;
+}
+
+inline float diagram_object_height_limit() {
+   return 0.55f * scene_half_height();
+}
+
+inline float mirror_object_distance_limit() {
+   return mirror_diagram_x() - (diagram_axis_min_x() + 0.12f * scene_half_width());
+}
+
+inline float lens_object_distance_limit() {
+   return lens_diagram_x() - (diagram_axis_min_x() + 0.12f * scene_half_width());
+}
+
+inline float clamp_mirror_object_distance(float distance) {
+   return std::clamp(distance, 0.18f, mirror_object_distance_limit());
+}
+
+inline float clamp_lens_object_distance(float distance) {
+   return std::clamp(distance, 0.18f, lens_object_distance_limit());
+}
+
+inline void draw_scene_label(const Vector2& point, const std::string& text, const ImVec4& color, bool centered = true) {
+   ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+   ImVec2 screen = scene_to_screen(point);
+   ImVec2 textSize = ImGui::CalcTextSize(text.c_str());
+   if (centered) {
+      screen.x -= textSize.x * 0.5f;
+   }
+   drawList->AddText(screen, ImGui::ColorConvertFloat4ToU32(color), text.c_str());
+}
+
 // ============================================================================
 // Function Prototypes for Simulation-Specific Drawing Functions
 // ============================================================================
@@ -136,5 +233,15 @@ void draw_refraction();
  * Shows light dispersion and internal reflections in geometric prisms
  */
 void draw_prism();  
+
+/**
+ * @brief Draw the object-based mirror diagram scene
+ */
+void draw_mirror_mode();
+
+/**
+ * @brief Draw the object-based lens diagram scene
+ */
+void draw_lens_mode();
 
 #endif // SIMULATION_H

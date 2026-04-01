@@ -13,6 +13,7 @@
  */
 
 #include "simulation.h"
+#include "optics.h"
 #include <cmath>
 #include <vector>
 
@@ -51,12 +52,33 @@ float rayAColor[3] = { 1.0f, 0.8f, 0.0f };    ///< Incident ray color (golden ye
 float rayBColor[3] = { 0.0f, 0.8f, 1.0f };    ///< Refracted ray color (cyan blue)
 float rayCColor[3] = { 0.4f, 0.1f, 0.5f };    ///< Reflected ray color (purple)
 float refractiveIndex2_RGB[3] = { 1.0f, 1.0f, 1.0f }; ///< RGB-specific refractive indices
+MirrorType currentMirrorType = MirrorType::Flat;       ///< Active mirror shape for mirror mode
+float mirrorCurvatureRadius = 1.2f;                    ///< Radius for spherical mirrors
+LensType currentLensType = LensType::Converging;       ///< Active lens type
+float lensFocalLength = 0.45f;                         ///< Thin-lens focal length
+float objectDistance = 0.55f;                          ///< Distance from optical element to the object
+float objectHeight = 0.35f;                            ///< Object arrow height
+bool objectPointsUp = true;                            ///< Object arrow orientation
+bool showConstructionRays = true;                      ///< Toggle for principal ray tracing
 
 // Mouse interaction state
 double lastX = 0.0;                           ///< Last mouse X position for tracking
 const float interfaceY = 0.0f;               ///< Y coordinate of refraction interface
 bool isFollowingMouse = false;                ///< Flag for mouse angle control mode
 bool isDraggingRay = false;                   ///< Flag for ray position dragging mode
+bool isDraggingObject = false;                ///< Flag for object dragging in Mirror/Lens modes
+
+namespace {
+
+void updateDraggedObject(const Vector2& scenePoint) {
+    if (currentMode == MIRROR) {
+        objectDistance = clamp_mirror_object_distance(mirror_diagram_x() - scenePoint.x);
+    } else if (currentMode == LENS) {
+        objectDistance = clamp_lens_object_distance(lens_diagram_x() - scenePoint.x);
+    }
+}
+
+} // namespace
 
 // ============================================================================
 // Callback and Utility Functions
@@ -113,22 +135,21 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
     // Don't process mouse input if ImGui wants to capture it
     if (io.WantCaptureMouse)
         return;
-    
     // Get current mouse position and convert to scene coordinates
     double xpos, ypos;
     glfwGetCursorPos(window, &xpos, &ypos);
-    float normX = static_cast<float>(xpos) / screenWidth * 2.0f - 1.0f;
-    float normY = 1.0f - static_cast<float>(ypos) / screenHeight * 2.0f;
-    float aspect = (float)screenWidth / (float)screenHeight;
-    float sceneX, sceneY;
-    
-    // Apply aspect ratio correction
-    if (aspect >= 1.0f) {
-        sceneX = normX * aspect;
-        sceneY = normY;
-    } else {
-        sceneX = normX;
-        sceneY = normY / aspect;
+    Vector2 scenePoint = screen_to_scene(xpos, ypos);
+
+    if (currentMode == MIRROR || currentMode == LENS) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT) {
+            if (action == GLFW_PRESS) {
+                isDraggingObject = true;
+                updateDraggedObject(scenePoint);
+            } else if (action == GLFW_RELEASE) {
+                isDraggingObject = false;
+            }
+        }
+        return;
     }
     
     // Get surface Y coordinate based on current simulation mode
@@ -137,13 +158,13 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         if (action == GLFW_PRESS) {
             // Check if clicking near the ray intersection point for dragging
-            if (std::fabs(sceneX - rayPosition) < 0.05f && std::fabs(sceneY - surfaceY) < 0.05f) {
+            if (std::fabs(scenePoint.x - rayPosition) < 0.05f && std::fabs(scenePoint.y - surfaceY) < 0.05f) {
                 isDraggingRay = true;
             } else {
                 // Start mouse following mode for angle control
                 isFollowingMouse = true;
-                float dx = sceneX - rayPosition;
-                float dy = sceneY - surfaceY;
+                float dx = scenePoint.x - rayPosition;
+                float dy = scenePoint.y - surfaceY;
                 float angleRad = std::atan2(dy, dx);
                 float angleDeg = angleRad * 180.0f / M_PI;
                 if(angleDeg < 0) angleDeg += 360.0f;
@@ -176,28 +197,22 @@ void cursor_position_callback(GLFWwindow* window, double xpos, double ypos) {
     // Don't process mouse input if ImGui wants to capture it
     if (io.WantCaptureMouse)
         return;
-    
-    // Convert screen coordinates to normalized device coordinates
-    float normX = static_cast<float>(xpos) / screenWidth * 2.0f - 1.0f;
-    float normY = 1.0f - static_cast<float>(ypos) / screenHeight * 2.0f;
-    float aspect = (float)screenWidth / (float)screenHeight;
-    float sceneX, sceneY;
-    
-    // Apply aspect ratio correction to get scene coordinates
-    if (aspect >= 1.0f) {
-        sceneX = normX * aspect;
-        sceneY = normY;
-    } else {
-        sceneX = normX;
-        sceneY = normY / aspect;
+    Vector2 scenePoint = screen_to_scene(xpos, ypos);
+
+    if (currentMode == MIRROR || currentMode == LENS) {
+        if (isDraggingObject) {
+            updateDraggedObject(scenePoint);
+        }
+        lastX = xpos;
+        return;
     }
     
     float surfaceY = (currentMode == REFLECTION) ? -0.8f : interfaceY;
     
     if (isFollowingMouse) {
         // Update ray angle based on mouse position relative to ray intersection
-        float dx = sceneX - rayPosition;
-        float dy = sceneY - surfaceY;
+        float dx = scenePoint.x - rayPosition;
+        float dy = scenePoint.y - surfaceY;
         float angleRad = std::atan2(dy, dx);
         float angleDeg = angleRad * 180.0f / M_PI;
         rotationAngle = angleDeg;
@@ -289,7 +304,7 @@ int main(){
         ImGui::Begin("Controls");
         
         // Simulation mode selection
-        const char* modes[] = { "Reflection", "Refraction", "Prism" };
+        const char* modes[] = { "Reflection", "Refraction", "Prism", "Mirror", "Lens" };
         static int currentModeIndex = static_cast<int>(currentMode);
         if (ImGui::Combo("Simulation Mode", &currentModeIndex, modes, IM_ARRAYSIZE(modes))) {
             currentMode = static_cast<SimulationMode>(currentModeIndex);
@@ -324,26 +339,72 @@ int main(){
             ImGui::Text("From: n = %.2f  To: n = %.2f", n1, n2);
             
             // Calculate and display angles
-            float incident = std::fabs(90.0f - std::fmod(rotationAngle, 360.0f));
+            float rad = rotationAngle * static_cast<float>(M_PI) / 180.0f;
+            Vector2 incidentDirection(-std::cos(rad), -std::sin(rad));
+            Vector2 interfaceNormal = rayFromTop ? Vector2(0.0f, 1.0f) : Vector2(0.0f, -1.0f);
+            float incident = incidentAngleDegrees(incidentDirection, interfaceNormal);
             ImGui::Text("Incident Angle: %.1f°", incident);
             
-            // Check for total internal reflection using Snell's law
-            float incidentRad = incident * M_PI / 180.0f;
-            float sinRefr = (n1 / n2) * sinf(incidentRad);
-
-            if (sinRefr > 1.0f || sinRefr < -1.0f) {
-                totalInternalReflection = true;
-            } else {
-                float refrAngle = asinf(sinRefr) * 180.0f / M_PI;
-                totalInternalReflection = false;
-            }
+            RefractionResult uiRefraction = refractDirection(incidentDirection, interfaceNormal, n1, n2);
+            totalInternalReflection = uiRefraction.totalInternalReflection;
             
             // Display refraction angle or total internal reflection warning
             if (!totalInternalReflection) {
-                float refrAngle = asinf(sinRefr) * 180.0f / M_PI;
+                float refrAngle = incidentAngleDegrees(uiRefraction.direction, interfaceNormal * -1.0f);
                 ImGui::Text("Refraction Angle: %.1f°", refrAngle);
             } else {
                 ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Total Internal Reflection");
+            }
+        }
+        else if (currentMode == MIRROR) {
+            const char* mirrorTypes[] = { "Flat", "Concave", "Convex" };
+            static int currentMirrorTypeIndex = static_cast<int>(currentMirrorType);
+            if (ImGui::Combo("Mirror Type", &currentMirrorTypeIndex, mirrorTypes, IM_ARRAYSIZE(mirrorTypes))) {
+                currentMirrorType = static_cast<MirrorType>(currentMirrorTypeIndex);
+            }
+            if (currentMirrorType != MirrorType::Flat) {
+                ImGui::SliderFloat("Curvature Radius", &mirrorCurvatureRadius, 0.70f, std::max(0.90f, 0.70f * scene_half_width()), "%.2f");
+                ImGui::Text("Focal Length: %.2f", mirrorCurvatureRadius * 0.5f);
+            }
+            ImGui::Separator();
+            ImGui::SliderFloat("Object Distance", &objectDistance, 0.18f, mirror_object_distance_limit(), "%.2f");
+            ImGui::SliderFloat("Object Height", &objectHeight, 0.10f, diagram_object_height_limit(), "%.2f");
+            ImGui::Checkbox("Object Points Up", &objectPointsUp);
+            ImGui::Checkbox("Show Construction Rays", &showConstructionRays);
+
+            const float signedHeight = objectPointsUp ? objectHeight : -objectHeight;
+            OpticalImage image = calculateMirrorImage(currentMirrorType, objectDistance, signedHeight, mirrorCurvatureRadius);
+            ImGui::Separator();
+            if (image.atInfinity) {
+                ImGui::Text("Image: at infinity");
+            } else if (image.valid) {
+                ImGui::Text("Image Distance: %.2f", image.distance);
+                ImGui::Text("Image Height: %.2f", image.height);
+                ImGui::Text("%s image", image.real ? "Real" : "Virtual");
+            }
+        }
+        else if (currentMode == LENS) {
+            const char* lensTypes[] = { "Converging", "Diverging" };
+            static int currentLensTypeIndex = static_cast<int>(currentLensType);
+            if (ImGui::Combo("Lens Type", &currentLensTypeIndex, lensTypes, IM_ARRAYSIZE(lensTypes))) {
+                currentLensType = static_cast<LensType>(currentLensTypeIndex);
+            }
+            ImGui::SliderFloat("Focal Length", &lensFocalLength, 0.18f, std::max(0.25f, 0.45f * scene_half_width()), "%.2f");
+            ImGui::Separator();
+            ImGui::SliderFloat("Object Distance", &objectDistance, 0.18f, lens_object_distance_limit(), "%.2f");
+            ImGui::SliderFloat("Object Height", &objectHeight, 0.10f, diagram_object_height_limit(), "%.2f");
+            ImGui::Checkbox("Object Points Up", &objectPointsUp);
+            ImGui::Checkbox("Show Construction Rays", &showConstructionRays);
+
+            const float signedHeight = objectPointsUp ? objectHeight : -objectHeight;
+            OpticalImage image = calculateLensImage(currentLensType, objectDistance, signedHeight, lensFocalLength);
+            ImGui::Separator();
+            if (image.atInfinity) {
+                ImGui::Text("Image: at infinity");
+            } else if (image.valid) {
+                ImGui::Text("Image Distance: %.2f", image.distance);
+                ImGui::Text("Image Height: %.2f", image.height);
+                ImGui::Text("%s image", image.real ? "Real" : "Virtual");
             }
         }
         else if (currentMode == PRISM) {
@@ -390,8 +451,15 @@ int main(){
         
         // Ray color customization
         ImGui::Separator();
-        ImGui::Text("Ray Colors");
-        ImGui::ColorEdit3("Incident Ray (A)", rayAColor);
+        if (currentMode == MIRROR || currentMode == LENS) {
+            ImGui::Text("Diagram Colors");
+            ImGui::ColorEdit3("Construction Ray A", rayAColor);
+            ImGui::ColorEdit3("Image", rayBColor);
+            ImGui::ColorEdit3("Construction Ray B", rayCColor);
+        } else {
+            ImGui::Text("Ray Colors");
+            ImGui::ColorEdit3("Incident Ray (A)", rayAColor);
+        }
         if (currentMode == REFLECTION) {
             ImGui::ColorEdit3("Reflected Ray (B)", rayBColor);
         } else if(currentMode == REFRACTION || currentMode == PRISM) {
@@ -412,6 +480,10 @@ int main(){
             draw_reflection();
         } else if (currentMode == REFRACTION) {
             draw_refraction();
+        } else if (currentMode == MIRROR) {
+            draw_mirror_mode();
+        } else if (currentMode == LENS) {
+            draw_lens_mode();
         } else if (currentMode == PRISM) {
             draw_prism();
         }

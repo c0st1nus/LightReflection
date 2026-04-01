@@ -8,8 +8,8 @@
  */
 
 #include "simulation.h"
+#include "optics.h"
 #include "ray.h"
-#include "vector2.h"
 #include <cmath>
 
 /**
@@ -27,6 +27,16 @@
  */
 void draw_refraction() {
     const float interfaceY = 0.0f;  // Y coordinate of the media interface
+    const OpticalSurface interfaceSurface = makeFlatSurface(
+        SurfaceType::FlatInterface,
+        Vector2(0.0f, interfaceY),
+        Vector2(1.0f, 0.0f),
+        Vector2(0.0f, 1.0f),
+        -1.0f,
+        1.0f,
+        makeDielectricMaterial(refractiveIndex1),
+        makeDielectricMaterial(refractiveIndex2)
+    );
     
     // Draw interface line between two media (horizontal gray line)
     draw_line(-1.0f, interfaceY, 1.0f, interfaceY, 0.7f, 0.7f, 0.7f, 3.0f);
@@ -36,56 +46,50 @@ void draw_refraction() {
     Vector2 inc_dir(-std::cos(rad), -std::sin(rad));
 
     // Calculate starting point of incident ray (offset from interface)
-    Vector2 start_point(rayPosition, interfaceY);
-    start_point = start_point - inc_dir * 1.5f;
+    Vector2 target_point(rayPosition, interfaceY);
+    Vector2 start_point = target_point - inc_dir * 1.5f;
+    SurfaceHit hit = intersectRayWithSurface(start_point, inc_dir, interfaceSurface);
+    if (!hit.hit) {
+        return;
+    }
 
     // Draw incident ray approaching the interface
-    Ray incident_ray(start_point, inc_dir, rayAColor, 1.5f);
+    Ray incident_ray(start_point, inc_dir, rayAColor, hit.distance);
     incident_ray.draw();
 
     // Draw normal line (dashed green vertical line) at intersection point
-    draw_dashed_line(rayPosition, interfaceY - 0.5f, rayPosition, interfaceY + 0.5f,
+    draw_dashed_line(hit.point.x, interfaceY - 0.5f, hit.point.x, interfaceY + 0.5f,
                      0.0f, 1.0f, 0.0f, 1.0f);
 
-    // Calculate incident angle from the normal
-    float incident = std::fabs(90.0f - std::fmod(rotationAngle, 180.0f));
-    float incidentRad = incident * M_PI / 180.0f;
-    
-    // Apply Snell's law: n1 * sin(θ1) = n2 * sin(θ2)
-    // Solve for sin(θ2) = (n1/n2) * sin(θ1)
-    float sinRefr = (n1 / n2) * sinf(incidentRad);
-
-    // Check for total internal reflection
-    if (sinRefr > 1.0f || sinRefr < -1.0f) {
-        // Total internal reflection occurs - no transmitted ray
-        totalInternalReflection = true;
-    } else {
-        // Normal refraction occurs
-        totalInternalReflection = false;
-
-        // Calculate and draw reflected ray (always present)
-        Vector2 refl_dir(inc_dir.x, -inc_dir.y);  // Mirror Y component for reflection
-        float reflectionBrightness = totalInternalReflection ? 1.0f : 0.4f;
-        float reflectedColor[] = { 
-            rayCColor[0] * reflectionBrightness, 
-            rayCColor[1] * reflectionBrightness, 
-            rayCColor[2] * reflectionBrightness 
+    Vector2 reflected_dir = reflectDirection(inc_dir, hit.normal);
+    RefractionResult refraction = refractDirection(
+        inc_dir,
+        hit.normal,
+        hit.incomingMaterial.refractiveIndex,
+        hit.outgoingMaterial.refractiveIndex
+    );
+    totalInternalReflection = refraction.totalInternalReflection;
+    if (totalInternalReflection) {
+        float reflectedColor[] = {
+            rayCColor[0],
+            rayCColor[1],
+            rayCColor[2]
         };
-        Ray reflected_ray(Vector2(rayPosition, interfaceY), refl_dir, reflectedColor, 2.0f);
+        Ray reflected_ray(hit.point, reflected_dir, reflectedColor, 2.0f);
         reflected_ray.draw();
-
-        // Calculate refracted ray direction using Snell's law
-        float refractionAngle = asinf(sinRefr);
-        float refX = copysignf(sinf(refractionAngle), inc_dir.x);  // Preserve horizontal direction
-        float refY = copysignf(cosf(refractionAngle), inc_dir.y);  // Bend according to Snell's law
-        Vector2 refr_dir = { refX, refY };
-        refr_dir.normalize();
-        
-        // Draw refracted ray bending into the second medium
-        Ray refracted_ray(Vector2(rayPosition, interfaceY), refr_dir, rayBColor, 2.0f);
+    } else {
+        float reflectionBrightness = 0.4f;
+        float reflectedColor[] = {
+            rayCColor[0] * reflectionBrightness,
+            rayCColor[1] * reflectionBrightness,
+            rayCColor[2] * reflectionBrightness
+        };
+        Ray reflected_ray(hit.point, reflected_dir, reflectedColor, 2.0f);
+        reflected_ray.draw();
+        Ray refracted_ray(hit.point, refraction.direction, rayBColor, 2.0f);
         refracted_ray.draw();
     }
 
     // Draw intersection point as a white dot
-    draw_point(rayPosition, interfaceY, 1.0f, 1.0f, 1.0f, 6.0f);
+    draw_point(hit.point.x, hit.point.y, 1.0f, 1.0f, 1.0f, 6.0f);
 }
